@@ -10,6 +10,13 @@ import ConfirmDialog from './components/ConfirmDialog';
 import { BoardSize } from './types';
 import { findUnstableBeads } from './utils/structure';
 
+type ConfirmationState = {
+  isOpen: boolean;
+  title: string;
+  message: string;
+  onConfirm: () => void;
+};
+
 function App() {
   const {
     // Editor state
@@ -55,13 +62,7 @@ function App() {
   // Feedback State
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   
-  // Generic Confirmation State
-  const [confirmation, setConfirmation] = useState<{
-    isOpen: boolean;
-    title: string;
-    message: string;
-    onConfirm: () => void;
-  }>({
+  const [confirmation, setConfirmation] = useState<ConfirmationState>({
     isOpen: false,
     title: "",
     message: "",
@@ -88,6 +89,15 @@ function App() {
 
   const closeConfirmation = () => {
     setConfirmation((prev) => ({ ...prev, isOpen: false }));
+  };
+
+  const askForConfirmation = (title: string, message: string, onConfirm: () => void) => {
+    setConfirmation({
+      isOpen: true,
+      title,
+      message,
+      onConfirm,
+    });
   };
 
   // --- Handlers ---
@@ -119,12 +129,7 @@ function App() {
 
     // If current draft has no saved design ID, loading context will discard it.
     if (!currentDesignId && !isSaved) {
-      setConfirmation({
-        isOpen: true,
-        title: "Start new design?",
-        message: "Unsaved changes will be lost.",
-        onConfirm: proceed,
-      });
+      askForConfirmation("Start new design?", "Unsaved changes will be lost.", proceed);
     } else {
       // If saved (has ID) or empty, createNewDesign auto-saves if needed (via flush) then resets
       proceed();
@@ -150,12 +155,11 @@ function App() {
 
     // Switching away from an unsaved draft (no persistent ID) should always be explicit.
     if (!currentDesignId && !isSaved) {
-      setConfirmation({
-        isOpen: true,
-        title: "Discard draft changes?",
-        message: "Your current unsaved draft will be lost if you open another design.",
-        onConfirm: proceed,
-      });
+      askForConfirmation(
+        "Discard draft changes?",
+        "Your current unsaved draft will be lost if you open another design.",
+        proceed
+      );
       return;
     }
 
@@ -174,24 +178,18 @@ function App() {
     if (isEmpty) {
        proceed();
     } else {
-       setConfirmation({
-         isOpen: true,
-         title: "Change board size?",
-         message: "This will start a new design. Unsaved changes will be lost.",
-         onConfirm: proceed,
-       });
+       askForConfirmation(
+         "Change board size?",
+         "This will start a new design. Unsaved changes will be lost.",
+         proceed
+       );
     }
   };
 
   const handleClearClick = () => {
-    setConfirmation({
-      isOpen: true,
-      title: "Clear the board?",
-      message: "Are you sure you want to clear the board? This can be undone.",
-      onConfirm: () => {
+    askForConfirmation("Clear the board?", "Are you sure you want to clear the board? This can be undone.", () => {
         clearBoard();
         closeConfirmation();
-      },
     });
   };
 

@@ -9,16 +9,43 @@ type PersistedSnapshot = {
   gridB64: string;
 };
 
+const DEFAULT_DESIGN_NAME = 'My Design';
+
+const createBlankCells = (size: Pick<BoardSize, 'width' | 'height'>): number[] =>
+  new Array(size.width * size.height).fill(0);
+
+const createEmptyHistory = () => ({
+  past: [] as HistoryAction[],
+  future: [] as HistoryAction[],
+});
+
+const createSnapshot = (
+  size: Pick<BoardSize, 'width' | 'height'>,
+  nextCells: number[]
+): PersistedSnapshot => ({
+  width: size.width,
+  height: size.height,
+  gridB64: storage.encodeGrid(nextCells),
+});
+
+const isValidCellIndex = (index: number, cellCount: number) => index >= 0 && index < cellCount;
+
+const getStrokeTargetValue = (tool: Tool, activeColorId: number) => (
+  tool === 'paint' ? activeColorId : 0
+);
+
+const sanitizeDesignName = (name: unknown) => {
+  if (typeof name !== 'string') return DEFAULT_DESIGN_NAME;
+  return name.trim() ? name : DEFAULT_DESIGN_NAME;
+};
+
 export const useEditor = () => {
   const [boardSize, setBoardSize] = useState<BoardSize>(DEFAULT_BOARD_SIZE);
-  const [cells, setCells] = useState<number[]>(
-    () => new Array(DEFAULT_BOARD_SIZE.width * DEFAULT_BOARD_SIZE.height).fill(0)
-  );
+  const [cells, setCells] = useState<number[]>(() => createBlankCells(DEFAULT_BOARD_SIZE));
 
-  const [history, setHistory] = useState<{ past: HistoryAction[]; future: HistoryAction[] }>({
-    past: [],
-    future: [],
-  });
+  const [history, setHistory] = useState<{ past: HistoryAction[]; future: HistoryAction[] }>(
+    createEmptyHistory
+  );
 
   const [activeTool, setActiveTool] = useState<Tool>('paint');
   const [activeColorId, setActiveColorId] = useState<number>(1);
@@ -26,7 +53,7 @@ export const useEditor = () => {
 
   // Persistence State
   const [currentDesignId, setCurrentDesignIdState] = useState<string | null>(null);
-  const [designName, setDesignName] = useState<string>('My Design');
+  const [designName, setDesignName] = useState<string>(DEFAULT_DESIGN_NAME);
   const [isSaved, setIsSaved] = useState(true); // Tracks if current in-memory state matches saved state
   const [savedDesigns, setSavedDesigns] = useState(storage.getDesignIndex());
 
@@ -37,12 +64,8 @@ export const useEditor = () => {
 
   const persistedSnapshotRef = useRef<PersistedSnapshot | null>(null);
   if (!persistedSnapshotRef.current) {
-    const initialCells = new Array(DEFAULT_BOARD_SIZE.width * DEFAULT_BOARD_SIZE.height).fill(0);
-    persistedSnapshotRef.current = {
-      width: DEFAULT_BOARD_SIZE.width,
-      height: DEFAULT_BOARD_SIZE.height,
-      gridB64: storage.encodeGrid(initialCells),
-    };
+    const initialCells = createBlankCells(DEFAULT_BOARD_SIZE);
+    persistedSnapshotRef.current = createSnapshot(DEFAULT_BOARD_SIZE, initialCells);
   }
 
   // --- Persistence Logic ---
@@ -65,11 +88,7 @@ export const useEditor = () => {
   }, []);
 
   const markPersistedSnapshot = useCallback((size: Pick<BoardSize, 'width' | 'height'>, nextCells: number[]) => {
-    persistedSnapshotRef.current = {
-      width: size.width,
-      height: size.height,
-      gridB64: storage.encodeGrid(nextCells),
-    };
+    persistedSnapshotRef.current = createSnapshot(size, nextCells);
   }, []);
 
   const isStateDirty = useCallback((nextCells: number[], nextSize: BoardSize) => {
@@ -80,12 +99,12 @@ export const useEditor = () => {
   }, []);
 
   const resetToBlankDesign = useCallback((size: BoardSize = DEFAULT_BOARD_SIZE) => {
-    const blankCells = new Array(size.width * size.height).fill(0);
+    const blankCells = createBlankCells(size);
     setBoardSize(size);
     setCells(blankCells);
-    setHistory({ past: [], future: [] });
+    setHistory(createEmptyHistory());
     setCurrentDesignId(null);
-    setDesignName('My Design');
+    setDesignName(DEFAULT_DESIGN_NAME);
     markPersistedSnapshot(size, blankCells);
     setIsSaved(true);
     isDirtyRef.current = false;
@@ -119,12 +138,12 @@ export const useEditor = () => {
     clearAutosaveTimer();
 
     const { size, decodedCells } = validated;
-    const safeName = typeof design.name === 'string' && design.name.trim() ? design.name : 'My Design';
+    const safeName = sanitizeDesignName(design.name);
 
     markPersistedSnapshot(size, decodedCells);
     setBoardSize(size);
     setCells(decodedCells);
-    setHistory({ past: [], future: [] });
+    setHistory(createEmptyHistory());
     setCurrentDesignId(design.id);
     setDesignName(safeName);
     setIsSaved(true);
@@ -168,16 +187,12 @@ export const useEditor = () => {
 
     storage.saveDesign(design);
     refreshDesignList();
-    persistedSnapshotRef.current = {
-      width: boardSize.width,
-      height: boardSize.height,
-      gridB64,
-    };
+    markPersistedSnapshot(boardSize, cells);
     setIsSaved(true);
     isDirtyRef.current = false;
 
     return idToUse;
-  }, [boardSize, cells, designName, refreshDesignList, setCurrentDesignId]);
+  }, [boardSize, cells, designName, markPersistedSnapshot, refreshDesignList, setCurrentDesignId]);
 
   // Flush pending autosave before switching context
   const flushAutosave = useCallback(() => {
@@ -328,39 +343,33 @@ export const useEditor = () => {
     createNewDesign(newSize);
   }, [createNewDesign]);
 
+  const patchStrokeCell = useCallback((index: number, targetValue: number) => {
+    if (currentStrokeRef.current.has(index)) return;
+
+    const currentValue = cells[index];
+    if (currentValue === targetValue) return;
+
+    const patch: CellPatch = { i: index, prev: currentValue, next: targetValue };
+    currentStrokeRef.current.set(index, patch);
+    setCells((prev) => {
+      const nextCells = [...prev];
+      nextCells[index] = targetValue;
+      return nextCells;
+    });
+  }, [cells]);
+
   const startStroke = useCallback((index: number) => {
-    if (index < 0 || index >= cells.length) return;
+    if (!isValidCellIndex(index, cells.length)) return;
     setIsDrawing(true);
     currentStrokeRef.current.clear();
-    const targetValue = activeTool === 'paint' ? activeColorId : 0;
-    const currentValue = cells[index];
-    if (currentValue !== targetValue) {
-      const patch: CellPatch = { i: index, prev: currentValue, next: targetValue };
-      currentStrokeRef.current.set(index, patch);
-      setCells((prev) => {
-        const nextCells = [...prev];
-        nextCells[index] = targetValue;
-        return nextCells;
-      });
-    }
-  }, [cells, activeTool, activeColorId]);
+    patchStrokeCell(index, getStrokeTargetValue(activeTool, activeColorId));
+  }, [cells.length, activeTool, activeColorId, patchStrokeCell]);
 
   const continueStroke = useCallback((index: number) => {
     if (!isDrawing) return;
-    if (index < 0 || index >= cells.length) return;
-    const targetValue = activeTool === 'paint' ? activeColorId : 0;
-    if (currentStrokeRef.current.has(index)) return;
-    const currentValue = cells[index];
-    if (currentValue !== targetValue) {
-      const patch: CellPatch = { i: index, prev: currentValue, next: targetValue };
-      currentStrokeRef.current.set(index, patch);
-      setCells((prev) => {
-        const nextCells = [...prev];
-        nextCells[index] = targetValue;
-        return nextCells;
-      });
-    }
-  }, [isDrawing, cells, activeTool, activeColorId]);
+    if (!isValidCellIndex(index, cells.length)) return;
+    patchStrokeCell(index, getStrokeTargetValue(activeTool, activeColorId));
+  }, [isDrawing, cells.length, activeTool, activeColorId, patchStrokeCell]);
 
   const endStroke = useCallback(() => {
     if (!isDrawing) return;

@@ -6,6 +6,8 @@ const KEYS = {
   DESIGN_PREFIX: 'fusebeads:design:',
 };
 
+const designStorageKey = (id: string) => `${KEYS.DESIGN_PREFIX}${id}`;
+
 // Grid Serialization
 export function encodeGrid(cells: number[]): string {
   const bytes = new Uint8Array(cells);
@@ -46,7 +48,7 @@ function saveDesignIndex(index: DesignIndexEntry[]) {
 export function saveDesign(design: Design) {
   try {
     // Save the full design record
-    localStorage.setItem(`${KEYS.DESIGN_PREFIX}${design.id}`, JSON.stringify(design));
+    localStorage.setItem(designStorageKey(design.id), JSON.stringify(design));
 
     // Update the index
     const index = getDesignIndex();
@@ -77,7 +79,7 @@ export function saveDesign(design: Design) {
 
 export function loadDesign(id: string): Design | null {
   try {
-    const json = localStorage.getItem(`${KEYS.DESIGN_PREFIX}${id}`);
+    const json = localStorage.getItem(designStorageKey(id));
     return json ? JSON.parse(json) : null;
   } catch {
     return null;
@@ -86,7 +88,7 @@ export function loadDesign(id: string): Design | null {
 
 export function deleteDesign(id: string) {
   try {
-    localStorage.removeItem(`${KEYS.DESIGN_PREFIX}${id}`);
+    localStorage.removeItem(designStorageKey(id));
     const index = getDesignIndex().filter((e) => e.id !== id);
     saveDesignIndex(index);
   } catch (e) {
@@ -107,5 +109,6 @@ export function setCurrentDesignId(id: string | null) {
 }
 
 export function generateId(): string {
-  return crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).substr(2);
+  if (crypto.randomUUID) return crypto.randomUUID();
+  return Date.now().toString(36) + Math.random().toString(36).slice(2);
 }
