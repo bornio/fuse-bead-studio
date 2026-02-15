@@ -10,7 +10,7 @@ export interface BoardSize {
   height: number;
 }
 
-export type Tool = 'paint' | 'erase';
+export type Tool = 'paint' | 'erase' | 'move';
 
 export interface CellPatch {
   i: number;

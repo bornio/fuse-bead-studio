@@ -10,10 +10,13 @@ interface DesignListModalProps {
   currentDesignId: string | null;
   onClose: () => void;
   onLoad: (id: string) => void;
+  onRequestDelete: (id: string) => void;
 }
 
 const THUMB_SIZE = 120;
 const EMPTY_CELL = 0;
+const LONG_PRESS_MS = 650;
+const LONG_PRESS_MOVE_TOLERANCE_PX = 10;
 
 const ThumbnailCanvas: React.FC<{ design: Design }> = ({ design }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -65,12 +68,104 @@ const ThumbnailCanvas: React.FC<{ design: Design }> = ({ design }) => {
   );
 };
 
+const DesignTile: React.FC<{
+  design: Design;
+  isCurrent: boolean;
+  onOpen: (id: string) => void;
+  onLongPressDelete: (id: string) => void;
+}> = ({ design, isCurrent, onOpen, onLongPressDelete }) => {
+  const timerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const longPressTriggeredRef = useRef(false);
+  const movedRef = useRef(false);
+  const startPointRef = useRef<{ x: number; y: number } | null>(null);
+
+  const clearTimer = () => {
+    if (timerRef.current) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    return () => clearTimer();
+  }, []);
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (e.button !== 0) return;
+    longPressTriggeredRef.current = false;
+    movedRef.current = false;
+    startPointRef.current = { x: e.clientX, y: e.clientY };
+    clearTimer();
+    timerRef.current = window.setTimeout(() => {
+      if (movedRef.current) return;
+      longPressTriggeredRef.current = true;
+      onLongPressDelete(design.id);
+    }, LONG_PRESS_MS);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const start = startPointRef.current;
+    if (!start) return;
+
+    const dx = e.clientX - start.x;
+    const dy = e.clientY - start.y;
+    if (Math.hypot(dx, dy) <= LONG_PRESS_MOVE_TOLERANCE_PX) return;
+
+    movedRef.current = true;
+    clearTimer();
+  };
+
+  const handlePointerUp = () => {
+    clearTimer();
+    startPointRef.current = null;
+  };
+
+  const handleClick = () => {
+    if (longPressTriggeredRef.current || movedRef.current) {
+      longPressTriggeredRef.current = false;
+      movedRef.current = false;
+      return;
+    }
+    onOpen(design.id);
+  };
+
+  return (
+    <button
+      key={design.id}
+      onClick={handleClick}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+      onPointerLeave={handlePointerUp}
+      onContextMenu={(e) => e.preventDefault()}
+      className={`relative rounded-xl border-2 p-1 bg-white transition-all active:scale-[0.99] ${
+        isCurrent
+          ? 'border-blue-500 ring-2 ring-blue-200'
+          : 'border-slate-200 hover:border-blue-300'
+      }`}
+      aria-label={isCurrent ? 'Open picture (currently open)' : 'Open picture'}
+    >
+      {isCurrent && (
+        <div className="absolute top-2 left-2 z-10 text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full bg-blue-600 text-white shadow">
+          Open
+        </div>
+      )}
+
+      <div className="rounded-lg overflow-hidden bg-slate-100 aspect-square">
+        <ThumbnailCanvas design={design} />
+      </div>
+    </button>
+  );
+};
+
 const DesignListModal: React.FC<DesignListModalProps> = ({
   isOpen,
   designs,
   currentDesignId,
   onClose,
   onLoad,
+  onRequestDelete,
 }) => {
   if (!isOpen) return null;
 
@@ -78,8 +173,18 @@ const DesignListModal: React.FC<DesignListModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg flex flex-col max-h-[80vh] animate-in fade-in zoom-in duration-200">
         <div className="flex items-center justify-between p-4 border-b border-slate-200">
-          <h3 className="text-lg font-bold text-slate-900">Gallery</h3>
-          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full text-slate-500">
+          <div className="flex flex-col">
+            <h3 className="text-lg font-bold text-slate-900">Gallery</h3>
+            <p className="text-xs text-slate-500">
+              Tip for grown-ups: press and hold a picture to delete it.
+            </p>
+          </div>
+
+          <button
+            onClick={onClose}
+            className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full text-slate-500 hover:bg-slate-100"
+            aria-label="Close gallery"
+          >
             <X size={20} />
           </button>
         </div>
@@ -93,23 +198,16 @@ const DesignListModal: React.FC<DesignListModalProps> = ({
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               {designs.map((design) => (
-                <button
+                <DesignTile
                   key={design.id}
-                  onClick={() => {
-                    onLoad(design.id);
+                  design={design}
+                  isCurrent={currentDesignId === design.id}
+                  onOpen={(id) => {
+                    onLoad(id);
                     onClose();
                   }}
-                  className={`rounded-xl border-2 p-1 bg-white transition-all ${
-                    currentDesignId === design.id
-                      ? 'border-blue-500 ring-2 ring-blue-200'
-                      : 'border-slate-200 hover:border-blue-300'
-                  }`}
-                  aria-label="Open picture"
-                >
-                  <div className="rounded-lg overflow-hidden bg-slate-100 aspect-square">
-                    <ThumbnailCanvas design={design} />
-                  </div>
-                </button>
+                  onLongPressDelete={(id) => onRequestDelete(id)}
+                />
               ))}
             </div>
           )}
