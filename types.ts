@@ -11,6 +11,7 @@ export interface BoardSize {
 }
 
 export type Tool = 'paint' | 'erase';
+export type SaveStatus = 'saved' | 'saving' | 'error';
 
 export interface CellPatch {
   i: number;

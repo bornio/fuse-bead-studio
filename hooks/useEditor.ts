@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { BoardSize, CellPatch, HistoryAction, Tool, Design } from '../types';
+import { BoardSize, CellPatch, HistoryAction, Tool, Design, SaveStatus } from '../types';
 import { DEFAULT_BOARD_SIZE, BOARD_SIZES } from '../constants';
 import * as storage from '../utils/storage';
 
@@ -55,6 +55,7 @@ export const useEditor = () => {
   const [currentDesignId, setCurrentDesignIdState] = useState<string | null>(null);
   const [designName, setDesignName] = useState<string>(DEFAULT_DESIGN_NAME);
   const [isSaved, setIsSaved] = useState(true); // Tracks if current in-memory state matches saved state
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
   const [savedDesigns, setSavedDesigns] = useState(storage.getDesignIndex());
 
   const currentStrokeRef = useRef<Map<number, CellPatch>>(new Map());
@@ -107,6 +108,7 @@ export const useEditor = () => {
     setDesignName(DEFAULT_DESIGN_NAME);
     markPersistedSnapshot(size, blankCells);
     setIsSaved(true);
+    setSaveStatus('saved');
     isDirtyRef.current = false;
   }, [markPersistedSnapshot, setCurrentDesignId]);
 
@@ -147,6 +149,7 @@ export const useEditor = () => {
     setCurrentDesignId(design.id);
     setDesignName(safeName);
     setIsSaved(true);
+    setSaveStatus('saved');
     isDirtyRef.current = false;
 
     return true;
@@ -185,21 +188,28 @@ export const useEditor = () => {
       updatedAt: now,
     };
 
-    storage.saveDesign(design);
-    refreshDesignList();
-    markPersistedSnapshot(boardSize, cells);
-    setIsSaved(true);
-    isDirtyRef.current = false;
-
-    return idToUse;
+    setSaveStatus('saving');
+    try {
+      storage.saveDesign(design);
+      refreshDesignList();
+      markPersistedSnapshot(boardSize, cells);
+      setIsSaved(true);
+      setSaveStatus('saved');
+      isDirtyRef.current = false;
+      return idToUse;
+    } catch (e) {
+      console.error('Failed to persist design', e);
+      setIsSaved(false);
+      setSaveStatus('error');
+      return null;
+    }
   }, [boardSize, cells, designName, markPersistedSnapshot, refreshDesignList, setCurrentDesignId]);
 
   // Flush pending autosave before switching context
   const flushAutosave = useCallback(() => {
     clearAutosaveTimer();
-    if (currentDesignIdRef.current && isDirtyRef.current) {
-      saveCurrentDesign();
-    }
+    if (!isDirtyRef.current) return true;
+    return Boolean(saveCurrentDesign());
   }, [clearAutosaveTimer, saveCurrentDesign]);
 
   // Initialize: Load last design on mount
@@ -214,15 +224,16 @@ export const useEditor = () => {
   }, [loadDesignToState, setCurrentDesignId]);
 
   const loadDesignById = useCallback((id: string) => {
-    flushAutosave();
+    if (!flushAutosave()) return false;
     const design = storage.loadDesign(id);
     if (!design) return false;
     return loadDesignToState(design);
   }, [flushAutosave, loadDesignToState]);
 
   const createNewDesign = useCallback((size: BoardSize = DEFAULT_BOARD_SIZE) => {
-    flushAutosave();
+    if (!flushAutosave()) return false;
     resetToBlankDesign(size);
+    return true;
   }, [flushAutosave, resetToBlankDesign]);
 
   const deleteDesignById = useCallback((id: string) => {
@@ -242,14 +253,17 @@ export const useEditor = () => {
   }, [boardSize, clearAutosaveTimer, refreshDesignList, resetToBlankDesign]);
 
   const renameDesign = useCallback((id: string, newName: string) => {
+    const trimmedName = newName.trim();
+    if (!trimmedName || trimmedName.length > 40) return;
+
     const design = storage.loadDesign(id);
     if (design) {
-      design.name = newName;
+      design.name = trimmedName;
       design.updatedAt = new Date().toISOString();
       storage.saveDesign(design);
       refreshDesignList();
       if (id === currentDesignIdRef.current) {
-        setDesignName(newName);
+        setDesignName(trimmedName);
       }
     }
   }, [refreshDesignList]);
@@ -261,7 +275,13 @@ export const useEditor = () => {
     setIsSaved(!dirty);
 
     clearAutosaveTimer();
-    if (!dirty || !currentDesignId) return;
+    if (!dirty) return;
+
+    // Persist brand-new drafts immediately so the first edit survives refresh/navigation.
+    if (!currentDesignId) {
+      saveCurrentDesign();
+      return;
+    }
 
     const scheduledDesignId = currentDesignId;
     autosaveTimerRef.current = setTimeout(() => {
@@ -406,6 +426,7 @@ export const useEditor = () => {
     currentDesignId,
     designName,
     isSaved,
+    saveStatus,
     savedDesigns,
     saveCurrentDesign,
     loadDesignById,

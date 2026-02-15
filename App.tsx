@@ -14,6 +14,18 @@ type ConfirmationState = {
   isOpen: boolean;
   title: string;
   message: string;
+  confirmLabel: string;
+  cancelLabel: string;
+  tone: 'neutral' | 'warning' | 'danger';
+  onConfirm: () => void;
+};
+
+type ConfirmationOptions = {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  cancelLabel?: string;
+  tone?: 'neutral' | 'warning' | 'danger';
   onConfirm: () => void;
 };
 
@@ -35,13 +47,13 @@ function App() {
     redo,
     canUndo,
     canRedo,
-    resizeBoard, // Acts as new/reset in V1 context
     clearBoard,
     
     // Persistence state
     currentDesignId,
     designName,
     isSaved,
+    saveStatus,
     savedDesigns,
     
     // Persistence actions
@@ -66,6 +78,9 @@ function App() {
     isOpen: false,
     title: "",
     message: "",
+    confirmLabel: "Confirm",
+    cancelLabel: "Cancel",
+    tone: "neutral",
     onConfirm: () => {},
   });
 
@@ -91,11 +106,21 @@ function App() {
     setConfirmation((prev) => ({ ...prev, isOpen: false }));
   };
 
-  const askForConfirmation = (title: string, message: string, onConfirm: () => void) => {
+  const askForConfirmation = ({
+    title,
+    message,
+    confirmLabel,
+    cancelLabel = 'Cancel',
+    tone = 'warning',
+    onConfirm,
+  }: ConfirmationOptions) => {
     setConfirmation({
       isOpen: true,
       title,
       message,
+      confirmLabel,
+      cancelLabel,
+      tone,
       onConfirm,
     });
   };
@@ -104,9 +129,12 @@ function App() {
 
   const handleSaveClick = () => {
     if (currentDesignId) {
-      // Already has an ID, force save (update timestamp/grid)
-      saveCurrentDesign();
-      showToast("Design saved!");
+      const savedId = saveCurrentDesign();
+      if (savedId) {
+        showToast("All changes saved");
+      } else {
+        showToast("Couldn't save. Storage may be full.");
+      }
     } else {
       // First time save, prompt for name
       setIsNameInputOpen(true);
@@ -114,52 +142,80 @@ function App() {
   };
 
   const handleNameSubmit = (name: string) => {
-    saveCurrentDesign(name);
+    const savedId = saveCurrentDesign(name);
+    if (!savedId) {
+      showToast("Couldn't save. Storage may be full.");
+      return;
+    }
     setIsNameInputOpen(false);
-    showToast("Design saved!");
+    showToast("All changes saved");
   };
 
   const handleNewClick = () => {
+    const hasContent = cells.some((c) => c !== 0);
+
     const proceed = () => {
-      createNewDesign(boardSize);
+      const created = createNewDesign(boardSize);
+      if (!created) {
+        showToast("Couldn't save. Storage may be full.");
+        return;
+      }
       setIsFused(false); // Reset view
-      showToast("New design started");
+      showToast("Started a new design");
       closeConfirmation();
     };
 
-    // If current draft has no saved design ID, loading context will discard it.
-    if (!currentDesignId && !isSaved) {
-      askForConfirmation("Start new design?", "Unsaved changes will be lost.", proceed);
-    } else {
-      // If saved (has ID) or empty, createNewDesign auto-saves if needed (via flush) then resets
+    if (!hasContent) {
       proceed();
+      return;
     }
+
+    if (!isSaved) {
+      askForConfirmation({
+        title: "Discard draft changes?",
+        message: "Unsaved changes will be lost.",
+        confirmLabel: "Discard Draft",
+        tone: "warning",
+        onConfirm: proceed,
+      });
+      return;
+    }
+
+    askForConfirmation({
+      title: "Start a new design?",
+      message: "You will switch to a blank board.",
+      confirmLabel: "Start New",
+      tone: "warning",
+      onConfirm: proceed,
+    });
   };
 
   const loadDesignWithSafetyChecks = (id: string) => {
     const loaded = loadDesignById(id);
     if (!loaded) {
-      showToast("Could not load design. Data may be corrupted.");
-      return;
+      showToast("Couldn't open that design");
+      return false;
     }
     setIsFused(false);
+    return true;
   };
 
   const handleLoadDesignRequest = (id: string) => {
     if (id === currentDesignId) return;
 
     const proceed = () => {
-      loadDesignWithSafetyChecks(id);
+      if (!loadDesignWithSafetyChecks(id)) return;
       closeConfirmation();
     };
 
-    // Switching away from an unsaved draft (no persistent ID) should always be explicit.
-    if (!currentDesignId && !isSaved) {
-      askForConfirmation(
-        "Discard draft changes?",
-        "Your current unsaved draft will be lost if you open another design.",
-        proceed
-      );
+    if (!isSaved) {
+      askForConfirmation({
+        title: "Discard draft changes?",
+        message: "Unsaved changes will be lost if you open another design.",
+        confirmLabel: "Discard Draft",
+        tone: "warning",
+        onConfirm: proceed,
+      });
       return;
     }
 
@@ -167,10 +223,16 @@ function App() {
   };
 
   const handleSizeChangeRequest = (newSize: BoardSize) => {
+    if (newSize.width === boardSize.width && newSize.height === boardSize.height) return;
+
     const isEmpty = cells.every(c => c === 0);
     
     const proceed = () => {
-      resizeBoard(newSize);
+      const created = createNewDesign(newSize);
+      if (!created) {
+        showToast("Couldn't save. Storage may be full.");
+        return;
+      }
       setIsFused(false); // Reset view
       closeConfirmation();
     };
@@ -178,18 +240,42 @@ function App() {
     if (isEmpty) {
        proceed();
     } else {
-       askForConfirmation(
-         "Change board size?",
-         "This will start a new design. Unsaved changes will be lost.",
-         proceed
-       );
+       askForConfirmation({
+         title: "Change board size?",
+         message: "This will start a new board size.",
+         confirmLabel: "Start New Size",
+         tone: "warning",
+         onConfirm: proceed,
+       });
     }
   };
 
   const handleClearClick = () => {
-    askForConfirmation("Clear the board?", "Are you sure you want to clear the board? This can be undone.", () => {
+    askForConfirmation({
+      title: "Clear board?",
+      message: "This can be undone with Undo.",
+      confirmLabel: "Clear Board",
+      tone: "danger",
+      onConfirm: () => {
         clearBoard();
         closeConfirmation();
+      },
+    });
+  };
+
+  const handleDeleteDesignRequest = (id: string) => {
+    const deleting = savedDesigns.find((design) => design.id === id);
+    askForConfirmation({
+      title: "Delete design?",
+      message: deleting
+        ? `"${deleting.name}" will be deleted forever.`
+        : "This design will be deleted forever.",
+      confirmLabel: "Delete Forever",
+      tone: "danger",
+      onConfirm: () => {
+        deleteDesignById(id);
+        closeConfirmation();
+      },
     });
   };
 
@@ -199,7 +285,7 @@ function App() {
     <div className="flex flex-col h-screen bg-slate-50 relative">
       <TopBar 
         designName={designName}
-        isSaved={isSaved}
+        saveStatus={saveStatus}
         currentSize={boardSize}
         isFused={isFused}
         unstableCount={unstableCount}
@@ -217,6 +303,7 @@ function App() {
           height={boardSize.height}
           cells={cells}
           isFused={isFused}
+          onExitFused={() => setIsFused(false)}
           onStrokeStart={startStroke}
           onStrokeMove={continueStroke}
           onStrokeEnd={endStroke}
@@ -258,7 +345,7 @@ function App() {
         designs={savedDesigns}
         currentDesignId={currentDesignId}
         onLoad={handleLoadDesignRequest}
-        onDelete={deleteDesignById}
+        onDeleteRequest={handleDeleteDesignRequest}
         onRename={renameDesign}
       />
 
@@ -274,6 +361,9 @@ function App() {
         isOpen={confirmation.isOpen}
         title={confirmation.title}
         message={confirmation.message}
+        confirmLabel={confirmation.confirmLabel}
+        cancelLabel={confirmation.cancelLabel}
+        tone={confirmation.tone}
         onConfirm={confirmation.onConfirm}
         onCancel={closeConfirmation}
       />

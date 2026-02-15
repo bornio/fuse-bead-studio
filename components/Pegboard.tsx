@@ -7,6 +7,7 @@ interface PegboardProps {
   height: number;
   cells: number[];
   isFused: boolean;
+  onExitFused: () => void;
   onStrokeStart: (index: number) => void;
   onStrokeMove: (index: number) => void;
   onStrokeEnd: () => void;
@@ -163,6 +164,7 @@ const Pegboard: React.FC<PegboardProps> = ({
   height,
   cells,
   isFused,
+  onExitFused,
   onStrokeStart,
   onStrokeMove,
   onStrokeEnd,
@@ -225,7 +227,10 @@ const Pegboard: React.FC<PegboardProps> = ({
   }, [isFused, onStrokeEnd]);
 
   const handlePointerDown = (e: React.PointerEvent) => {
-    if (isFused) return;
+    if (isFused) {
+      onExitFused();
+      return;
+    }
     e.currentTarget.setPointerCapture(e.pointerId);
     const index = getCellIndexFromEvent(e);
     if (index !== -1) {

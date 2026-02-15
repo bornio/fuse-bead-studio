@@ -4,6 +4,9 @@ interface ConfirmDialogProps {
   isOpen: boolean;
   title: string;
   message: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  tone?: 'neutral' | 'warning' | 'danger';
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -12,10 +15,19 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   isOpen,
   title,
   message,
+  confirmLabel = 'Confirm',
+  cancelLabel = 'Cancel',
+  tone = 'neutral',
   onConfirm,
   onCancel,
 }) => {
   if (!isOpen) return null;
+
+  const confirmClass = {
+    neutral: 'bg-blue-600 hover:bg-blue-700',
+    warning: 'bg-amber-600 hover:bg-amber-700',
+    danger: 'bg-red-600 hover:bg-red-700',
+  }[tone];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
@@ -24,16 +36,17 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
         <p className="text-slate-600 mb-6">{message}</p>
         <div className="flex justify-end gap-3">
           <button
+            autoFocus
             onClick={onCancel}
             className="px-4 py-2 rounded-lg text-slate-700 font-medium hover:bg-slate-100 transition-colors"
           >
-            Cancel
+            {cancelLabel}
           </button>
           <button
             onClick={onConfirm}
-            className="px-4 py-2 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 transition-colors shadow-sm"
+            className={`px-4 py-2 rounded-lg text-white font-medium transition-colors shadow-sm ${confirmClass}`}
           >
-            Confirm
+            {confirmLabel}
           </button>
         </div>
       </div>
