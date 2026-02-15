@@ -11,7 +11,6 @@ export interface BoardSize {
 }
 
 export type Tool = 'paint' | 'erase';
-export type SaveStatus = 'saved' | 'saving' | 'error';
 
 export interface CellPatch {
   i: number;
@@ -38,7 +37,6 @@ export interface EditorState {
 
 export interface Design {
   id: string;
-  name: string;
   width: number;
   height: number;
   paletteVersion: string;
@@ -49,7 +47,6 @@ export interface Design {
 
 export interface DesignIndexEntry {
   id: string;
-  name: string;
   width: number;
   height: number;
   updatedAt: string;

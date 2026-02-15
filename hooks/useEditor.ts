@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { BoardSize, CellPatch, HistoryAction, Tool, Design, SaveStatus } from '../types';
+import { BoardSize, CellPatch, HistoryAction, Tool, Design } from '../types';
 import { DEFAULT_BOARD_SIZE, BOARD_SIZES } from '../constants';
 import * as storage from '../utils/storage';
 
@@ -8,8 +8,6 @@ type PersistedSnapshot = {
   height: number;
   gridB64: string;
 };
-
-const DEFAULT_DESIGN_NAME = 'My Design';
 
 const createBlankCells = (size: Pick<BoardSize, 'width' | 'height'>): number[] =>
   new Array(size.width * size.height).fill(0);
@@ -34,11 +32,6 @@ const getStrokeTargetValue = (tool: Tool, activeColorId: number) => (
   tool === 'paint' ? activeColorId : 0
 );
 
-const sanitizeDesignName = (name: unknown) => {
-  if (typeof name !== 'string') return DEFAULT_DESIGN_NAME;
-  return name.trim() ? name : DEFAULT_DESIGN_NAME;
-};
-
 export const useEditor = () => {
   const [boardSize, setBoardSize] = useState<BoardSize>(DEFAULT_BOARD_SIZE);
   const [cells, setCells] = useState<number[]>(() => createBlankCells(DEFAULT_BOARD_SIZE));
@@ -53,10 +46,7 @@ export const useEditor = () => {
 
   // Persistence State
   const [currentDesignId, setCurrentDesignIdState] = useState<string | null>(null);
-  const [designName, setDesignName] = useState<string>(DEFAULT_DESIGN_NAME);
-  const [isSaved, setIsSaved] = useState(true); // Tracks if current in-memory state matches saved state
-  const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
-  const [savedDesigns, setSavedDesigns] = useState(storage.getDesignIndex());
+  const [savedDesigns, setSavedDesigns] = useState(storage.getGalleryDesigns());
 
   const currentStrokeRef = useRef<Map<number, CellPatch>>(new Map());
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -85,7 +75,7 @@ export const useEditor = () => {
   }, []);
 
   const refreshDesignList = useCallback(() => {
-    setSavedDesigns(storage.getDesignIndex());
+    setSavedDesigns(storage.getGalleryDesigns());
   }, []);
 
   const markPersistedSnapshot = useCallback((size: Pick<BoardSize, 'width' | 'height'>, nextCells: number[]) => {
@@ -105,10 +95,7 @@ export const useEditor = () => {
     setCells(blankCells);
     setHistory(createEmptyHistory());
     setCurrentDesignId(null);
-    setDesignName(DEFAULT_DESIGN_NAME);
     markPersistedSnapshot(size, blankCells);
-    setIsSaved(true);
-    setSaveStatus('saved');
     isDirtyRef.current = false;
   }, [markPersistedSnapshot, setCurrentDesignId]);
 
@@ -140,25 +127,19 @@ export const useEditor = () => {
     clearAutosaveTimer();
 
     const { size, decodedCells } = validated;
-    const safeName = sanitizeDesignName(design.name);
 
     markPersistedSnapshot(size, decodedCells);
     setBoardSize(size);
     setCells(decodedCells);
     setHistory(createEmptyHistory());
     setCurrentDesignId(design.id);
-    setDesignName(safeName);
-    setIsSaved(true);
-    setSaveStatus('saved');
     isDirtyRef.current = false;
 
     return true;
   }, [clearAutosaveTimer, markPersistedSnapshot, setCurrentDesignId, validateLoadedDesign]);
 
-  const saveCurrentDesign = useCallback((nameOverride?: string) => {
+  const saveCurrentDesign = useCallback(() => {
     const now = new Date().toISOString();
-    const trimmedOverride = nameOverride?.trim();
-    const nameToUse = trimmedOverride || designName;
 
     let idToUse = currentDesignIdRef.current;
     let createdAt = now;
@@ -172,14 +153,9 @@ export const useEditor = () => {
       if (existing) createdAt = existing.createdAt;
     }
 
-    if (trimmedOverride) {
-      setDesignName(trimmedOverride);
-    }
-
     const gridB64 = storage.encodeGrid(cells);
     const design: Design = {
       id: idToUse,
-      name: nameToUse,
       width: boardSize.width,
       height: boardSize.height,
       paletteVersion: 'v1',
@@ -188,22 +164,17 @@ export const useEditor = () => {
       updatedAt: now,
     };
 
-    setSaveStatus('saving');
     try {
       storage.saveDesign(design);
       refreshDesignList();
       markPersistedSnapshot(boardSize, cells);
-      setIsSaved(true);
-      setSaveStatus('saved');
       isDirtyRef.current = false;
       return idToUse;
     } catch (e) {
       console.error('Failed to persist design', e);
-      setIsSaved(false);
-      setSaveStatus('error');
       return null;
     }
-  }, [boardSize, cells, designName, markPersistedSnapshot, refreshDesignList, setCurrentDesignId]);
+  }, [boardSize, cells, markPersistedSnapshot, refreshDesignList, setCurrentDesignId]);
 
   // Flush pending autosave before switching context
   const flushAutosave = useCallback(() => {
@@ -236,43 +207,10 @@ export const useEditor = () => {
     return true;
   }, [flushAutosave, resetToBlankDesign]);
 
-  const deleteDesignById = useCallback((id: string) => {
-    const deletingCurrent = id === currentDesignIdRef.current;
-
-    if (deletingCurrent) {
-      clearAutosaveTimer();
-    }
-
-    storage.deleteDesign(id);
-    refreshDesignList();
-
-    if (deletingCurrent) {
-      // If deleting current, reset to empty without flushing stale autosave.
-      resetToBlankDesign(boardSize);
-    }
-  }, [boardSize, clearAutosaveTimer, refreshDesignList, resetToBlankDesign]);
-
-  const renameDesign = useCallback((id: string, newName: string) => {
-    const trimmedName = newName.trim();
-    if (!trimmedName || trimmedName.length > 40) return;
-
-    const design = storage.loadDesign(id);
-    if (design) {
-      design.name = trimmedName;
-      design.updatedAt = new Date().toISOString();
-      storage.saveDesign(design);
-      refreshDesignList();
-      if (id === currentDesignIdRef.current) {
-        setDesignName(trimmedName);
-      }
-    }
-  }, [refreshDesignList]);
-
   // Autosave + dirty state effect
   useEffect(() => {
     const dirty = isStateDirty(cells, boardSize);
     isDirtyRef.current = dirty;
-    setIsSaved(!dirty);
 
     clearAutosaveTimer();
     if (!dirty) return;
@@ -424,14 +362,9 @@ export const useEditor = () => {
     
     // Persistence
     currentDesignId,
-    designName,
-    isSaved,
-    saveStatus,
     savedDesigns,
     saveCurrentDesign,
     loadDesignById,
     createNewDesign,
-    deleteDesignById,
-    renameDesign,
   };
 };

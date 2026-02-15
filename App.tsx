@@ -5,9 +5,7 @@ import Palette from './components/Palette';
 import Toolbar from './components/Toolbar';
 import TopBar from './components/TopBar';
 import DesignListModal from './components/DesignListModal';
-import NameInputDialog from './components/NameInputDialog';
 import ConfirmDialog from './components/ConfirmDialog';
-import { BoardSize } from './types';
 import { findUnstableBeads } from './utils/structure';
 
 type ConfirmationState = {
@@ -51,28 +49,20 @@ function App() {
     
     // Persistence state
     currentDesignId,
-    designName,
-    isSaved,
-    saveStatus,
     savedDesigns,
-    
-    // Persistence actions
-    saveCurrentDesign,
     loadDesignById,
     createNewDesign,
-    deleteDesignById,
-    renameDesign,
   } = useEditor();
 
   // Modal States
   const [isDesignsModalOpen, setIsDesignsModalOpen] = useState(false);
-  const [isNameInputOpen, setIsNameInputOpen] = useState(false);
   
   // View State
   const [isFused, setIsFused] = useState(false);
 
   // Feedback State
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const STORAGE_ERROR_MESSAGE = "No more space. Ask a grown-up to delete old pictures.";
   
   const [confirmation, setConfirmation] = useState<ConfirmationState>({
     isOpen: false,
@@ -127,41 +117,17 @@ function App() {
 
   // --- Handlers ---
 
-  const handleSaveClick = () => {
-    if (currentDesignId) {
-      const savedId = saveCurrentDesign();
-      if (savedId) {
-        showToast("All changes saved");
-      } else {
-        showToast("Couldn't save. Storage may be full.");
-      }
-    } else {
-      // First time save, prompt for name
-      setIsNameInputOpen(true);
-    }
-  };
-
-  const handleNameSubmit = (name: string) => {
-    const savedId = saveCurrentDesign(name);
-    if (!savedId) {
-      showToast("Couldn't save. Storage may be full.");
-      return;
-    }
-    setIsNameInputOpen(false);
-    showToast("All changes saved");
-  };
-
   const handleNewClick = () => {
     const hasContent = cells.some((c) => c !== 0);
 
     const proceed = () => {
       const created = createNewDesign(boardSize);
       if (!created) {
-        showToast("Couldn't save. Storage may be full.");
+        showToast(STORAGE_ERROR_MESSAGE);
         return;
       }
       setIsFused(false); // Reset view
-      showToast("Started a new design");
+      showToast("New picture started");
       closeConfirmation();
     };
 
@@ -170,21 +136,11 @@ function App() {
       return;
     }
 
-    if (!isSaved) {
-      askForConfirmation({
-        title: "Discard draft changes?",
-        message: "Unsaved changes will be lost.",
-        confirmLabel: "Discard Draft",
-        tone: "warning",
-        onConfirm: proceed,
-      });
-      return;
-    }
-
     askForConfirmation({
-      title: "Start a new design?",
-      message: "You will switch to a blank board.",
-      confirmLabel: "Start New",
+      title: "Start a new picture?",
+      message: "Your current picture is already saved.",
+      confirmLabel: "Yes",
+      cancelLabel: "No",
       tone: "warning",
       onConfirm: proceed,
     });
@@ -193,7 +149,7 @@ function App() {
   const loadDesignWithSafetyChecks = (id: string) => {
     const loaded = loadDesignById(id);
     if (!loaded) {
-      showToast("Couldn't open that design");
+      showToast("Couldn't open that picture");
       return false;
     }
     setIsFused(false);
@@ -202,78 +158,18 @@ function App() {
 
   const handleLoadDesignRequest = (id: string) => {
     if (id === currentDesignId) return;
-
-    const proceed = () => {
-      if (!loadDesignWithSafetyChecks(id)) return;
-      closeConfirmation();
-    };
-
-    if (!isSaved) {
-      askForConfirmation({
-        title: "Discard draft changes?",
-        message: "Unsaved changes will be lost if you open another design.",
-        confirmLabel: "Discard Draft",
-        tone: "warning",
-        onConfirm: proceed,
-      });
-      return;
-    }
-
-    proceed();
-  };
-
-  const handleSizeChangeRequest = (newSize: BoardSize) => {
-    if (newSize.width === boardSize.width && newSize.height === boardSize.height) return;
-
-    const isEmpty = cells.every(c => c === 0);
-    
-    const proceed = () => {
-      const created = createNewDesign(newSize);
-      if (!created) {
-        showToast("Couldn't save. Storage may be full.");
-        return;
-      }
-      setIsFused(false); // Reset view
-      closeConfirmation();
-    };
-
-    if (isEmpty) {
-       proceed();
-    } else {
-       askForConfirmation({
-         title: "Change board size?",
-         message: "This will start a new board size.",
-         confirmLabel: "Start New Size",
-         tone: "warning",
-         onConfirm: proceed,
-       });
-    }
+    loadDesignWithSafetyChecks(id);
   };
 
   const handleClearClick = () => {
     askForConfirmation({
-      title: "Clear board?",
-      message: "This can be undone with Undo.",
-      confirmLabel: "Clear Board",
+      title: "Clear this picture?",
+      message: "You can undo if needed.",
+      confirmLabel: "Yes",
+      cancelLabel: "No",
       tone: "danger",
       onConfirm: () => {
         clearBoard();
-        closeConfirmation();
-      },
-    });
-  };
-
-  const handleDeleteDesignRequest = (id: string) => {
-    const deleting = savedDesigns.find((design) => design.id === id);
-    askForConfirmation({
-      title: "Delete design?",
-      message: deleting
-        ? `"${deleting.name}" will be deleted forever.`
-        : "This design will be deleted forever.",
-      confirmLabel: "Delete Forever",
-      tone: "danger",
-      onConfirm: () => {
-        deleteDesignById(id);
         closeConfirmation();
       },
     });
@@ -284,16 +180,11 @@ function App() {
   return (
     <div className="flex flex-col h-screen bg-slate-50 relative">
       <TopBar 
-        designName={designName}
-        saveStatus={saveStatus}
-        currentSize={boardSize}
         isFused={isFused}
         unstableCount={unstableCount}
         onToggleFused={() => setIsFused(!isFused)}
-        onSizeChange={handleSizeChangeRequest}
         onNew={handleNewClick}
-        onSave={handleSaveClick}
-        onOpenMyDesigns={() => setIsDesignsModalOpen(true)}
+        onOpenGallery={() => setIsDesignsModalOpen(true)}
         onClear={handleClearClick}
       />
 
@@ -345,16 +236,6 @@ function App() {
         designs={savedDesigns}
         currentDesignId={currentDesignId}
         onLoad={handleLoadDesignRequest}
-        onDeleteRequest={handleDeleteDesignRequest}
-        onRename={renameDesign}
-      />
-
-      <NameInputDialog
-        isOpen={isNameInputOpen}
-        initialValue={currentDesignId ? designName : "My Design"}
-        onConfirm={handleNameSubmit}
-        onCancel={() => setIsNameInputOpen(false)}
-        title={currentDesignId ? "Rename Design" : "Name your design"}
       />
 
       <ConfirmDialog 

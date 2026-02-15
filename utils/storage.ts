@@ -6,6 +6,8 @@ const KEYS = {
   DESIGN_PREFIX: 'fusebeads:design:',
 };
 
+export const MAX_DESIGNS = 30;
+
 const designStorageKey = (id: string) => `${KEYS.DESIGN_PREFIX}${id}`;
 
 // Grid Serialization
@@ -55,7 +57,6 @@ export function saveDesign(design: Design) {
     const entryIndex = index.findIndex((e) => e.id === design.id);
     const entry: DesignIndexEntry = {
       id: design.id,
-      name: design.name,
       width: design.width,
       height: design.height,
       updatedAt: design.updatedAt,
@@ -69,8 +70,11 @@ export function saveDesign(design: Design) {
     
     // Sort by updated descending
     index.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-    
-    saveDesignIndex(index);
+
+    // Keep only most recent designs and clean up overflow records.
+    const overflow = index.slice(MAX_DESIGNS);
+    overflow.forEach((entry) => localStorage.removeItem(designStorageKey(entry.id)));
+    saveDesignIndex(index.slice(0, MAX_DESIGNS));
   } catch (e) {
     console.error("Failed to save design", e);
     throw new Error("Storage full or unavailable");
@@ -84,6 +88,18 @@ export function loadDesign(id: string): Design | null {
   } catch {
     return null;
   }
+}
+
+export function getGalleryDesigns(): Design[] {
+  const index = getDesignIndex();
+  const designs: Design[] = [];
+
+  index.forEach((entry) => {
+    const design = loadDesign(entry.id);
+    if (design) designs.push(design);
+  });
+
+  return designs.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 }
 
 export function deleteDesign(id: string) {
