@@ -1,19 +1,46 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Fuse Bead Studio
 
-# Run and deploy your AI Studio app
+Fuse Bead Studio is a browser-based editor for creating fuse bead patterns on a virtual pegboard.
 
-This contains everything you need to run your app locally.
+## Features
 
-View your app in AI Studio: https://ai.studio/apps/drive/1fRx_Tc2miNq95bRyi1tQqGDkc8Up0pBz
+- Paint and erase tools
+- Color palette selection
+- Undo and redo
+- Fused/ironed preview mode
+- Save, load, rename, and delete designs in local storage
+- Multiple board sizes
 
-## Run Locally
+## Local Development
 
-**Prerequisites:**  Node.js
+Prerequisites:
 
+- Node.js 20+
 
-1. Install dependencies:
-   `npm install`
-2. Run the app:
-   `npm run dev`
+Install and run:
+
+```bash
+npm install
+npm run dev
+```
+
+Build for production:
+
+```bash
+npm run build
+npm run preview
+```
+
+## Deployment (GitHub Pages)
+
+This repository is configured to deploy automatically to GitHub Pages using GitHub Actions.
+
+- Workflow file: `.github/workflows/deploy-pages.yml`
+- Deploy trigger: push to `main`
+- Live site: `https://bornio.github.io/fuse-bead-studio/`
+
+If you rename the repository, update the Vite `base` path in `vite.config.ts` to match:
+
+```ts
+base: '/your-repo-name/'
+```
