@@ -231,7 +231,14 @@ const Pegboard: React.FC<PegboardProps> = ({
     return -1;
   };
 
+  useEffect(() => {
+    if (!isFused) return;
+    // If mode flips mid-stroke, force-close any active stroke so it cannot continue.
+    onStrokeEnd();
+  }, [isFused, onStrokeEnd]);
+
   const handlePointerDown = (e: React.PointerEvent) => {
+    if (isFused) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     const index = getCellIndexFromEvent(e);
     if (index !== -1) {
@@ -240,6 +247,7 @@ const Pegboard: React.FC<PegboardProps> = ({
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
+    if (isFused) return;
     if (e.buttons !== 1) return;
     const index = getCellIndexFromEvent(e);
     if (index !== -1) {
@@ -248,7 +256,9 @@ const Pegboard: React.FC<PegboardProps> = ({
   };
 
   const handlePointerUp = (e: React.PointerEvent) => {
-    e.currentTarget.releasePointerCapture(e.pointerId);
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
     onStrokeEnd();
   };
 
@@ -264,7 +274,7 @@ const Pegboard: React.FC<PegboardProps> = ({
         <canvas
           ref={canvasRef}
           style={{ width: width * CELL_SIZE, height: height * CELL_SIZE, display: 'block' }}
-          className="cursor-crosshair touch-none"
+          className={`${isFused ? 'cursor-default' : 'cursor-crosshair'} touch-none`}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}

@@ -110,8 +110,6 @@ function App() {
   };
 
   const handleNewClick = () => {
-    const isEmpty = cells.every(c => c === 0);
-    
     const proceed = () => {
       createNewDesign(boardSize);
       setIsFused(false); // Reset view
@@ -119,8 +117,8 @@ function App() {
       closeConfirmation();
     };
 
-    // If unsaved changes (no ID and not empty), warn user
-    if (!isEmpty && !currentDesignId) {
+    // If current draft has no saved design ID, loading context will discard it.
+    if (!currentDesignId && !isSaved) {
       setConfirmation({
         isOpen: true,
         title: "Start new design?",
@@ -131,6 +129,37 @@ function App() {
       // If saved (has ID) or empty, createNewDesign auto-saves if needed (via flush) then resets
       proceed();
     }
+  };
+
+  const loadDesignWithSafetyChecks = (id: string) => {
+    const loaded = loadDesignById(id);
+    if (!loaded) {
+      showToast("Could not load design. Data may be corrupted.");
+      return;
+    }
+    setIsFused(false);
+  };
+
+  const handleLoadDesignRequest = (id: string) => {
+    if (id === currentDesignId) return;
+
+    const proceed = () => {
+      loadDesignWithSafetyChecks(id);
+      closeConfirmation();
+    };
+
+    // Switching away from an unsaved draft (no persistent ID) should always be explicit.
+    if (!currentDesignId && !isSaved) {
+      setConfirmation({
+        isOpen: true,
+        title: "Discard draft changes?",
+        message: "Your current unsaved draft will be lost if you open another design.",
+        onConfirm: proceed,
+      });
+      return;
+    }
+
+    proceed();
   };
 
   const handleSizeChangeRequest = (newSize: BoardSize) => {
@@ -230,7 +259,7 @@ function App() {
         onClose={() => setIsDesignsModalOpen(false)}
         designs={savedDesigns}
         currentDesignId={currentDesignId}
-        onLoad={loadDesignById}
+        onLoad={handleLoadDesignRequest}
         onDelete={deleteDesignById}
         onRename={renameDesign}
       />

@@ -30,6 +30,12 @@ const TopBar: React.FC<TopBarProps> = ({
   onOpenMyDesigns,
   onClear
 }) => {
+  const getSizeValue = (size: BoardSize) => `${size.width}x${size.height}`;
+  const matchedPresetSize = BOARD_SIZES.find(
+    (size) => size.width === currentSize.width && size.height === currentSize.height
+  );
+  const sizeOptions = matchedPresetSize ? BOARD_SIZES : [currentSize, ...BOARD_SIZES];
+
   return (
     <header className="relative h-16 bg-white border-b border-slate-200 flex items-center justify-between px-3 z-10 shadow-sm shrink-0 gap-2">
       
@@ -83,16 +89,16 @@ const TopBar: React.FC<TopBarProps> = ({
 
         {/* Size Selector */}
         <select
-          value={currentSize.label}
+          value={getSizeValue(currentSize)}
           onChange={(e) => {
-            const size = BOARD_SIZES.find(s => s.label === e.target.value);
+            const size = sizeOptions.find((s) => getSizeValue(s) === e.target.value);
             if (size) onSizeChange(size);
           }}
           className="bg-slate-100 border border-slate-300 text-slate-900 text-xs sm:text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-auto p-1.5 sm:p-2 font-medium max-w-[100px] sm:max-w-none"
           title="Change Board Size (Starts New)"
         >
-          {BOARD_SIZES.map((size) => (
-            <option key={size.label} value={size.label}>
+          {sizeOptions.map((size) => (
+            <option key={getSizeValue(size)} value={getSizeValue(size)}>
               {size.width}x{size.height}
             </option>
           ))}
